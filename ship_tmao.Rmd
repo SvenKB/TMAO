@@ -1,0 +1,297 @@
+---
+title: "SHIP TMAO"
+author: "Sven Kleine Bardenhorst"
+date: "27 5 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r Load libraries, include=FALSE}
+library(tidyverse)
+library(haven)
+library(Hmisc)
+library(dplyr)
+library(knitr)
+library(DiagrammeR)
+library(summarytools)
+library(hablar)
+library(labelled)
+library(car)
+library(xtable)
+library(huxtable)
+library(corrplot)
+library(FactoMineR)
+library("rgl")
+
+st_options(bootstrap.css     = FALSE,       # Already part of the theme so no need for it
+           plain.ascii       = FALSE,       # One of the essential settings
+           style             = "rmarkdown", # Idem.
+           dfSummary.silent  = TRUE,        # Suppresses messages about temporary files
+           footnote          = NA,          # Keeping the results minimalistic
+           subtitle.emphasis = FALSE,       # For the vignette theme, this gives
+           headings = F)       
+                                            # much better results. Your mileage may vary.
+```
+
+```{r Load data, include=FALSE}
+mydata <- read_dta(file = "ship_2019_137_md_s2t0_20200327.dta")
+#summary(mydata)
+glimpse(mydata)
+data <- mydata %>% select(c("zz_nr","stool_dna_tma_cutc","stool_dna_tma_cnta","stool_dna_tma_grdh","omics_tma_tmao","omics_tma_choline","omics_tma_betaine","omics_tma_carnitine","stool_dna_tma_16s_rdna"))
+#dataselall <- data %>% filter(stool_dna_tma_cutc < 99975 | stool_dna_tma_cutc > 9999)  %>% filter(stool_dna_tma_cnta < 99975 | stool_dna_tma_cnta > 99999) %>% filter(stool_dna_tma_grdh < 99975 | stool_dna_tma_grdh > 99999) %>% filter(omics_tma_tmao < 99975 | omics_tma_tmao > 99999)  %>% filter(omics_tma_choline < 99975 | omics_tma_choline > 99999) %>% filter(omics_tma_betaine < 99975 | omics_tma_betaine > 99999) %>% filter(omics_tma_carnitine < 99975 | omics_tma_carnitine > 99999) %>% filter(stool_dna_tma_16s_rdna < 99975 | stool_dna_tma_16s_rdna > 99999)
+
+#select based on 16S as all have it
+dataselall <- data %>% filter(stool_dna_tma_16s_rdna < 99975 | stool_dna_tma_16s_rdna > 99999)
+
+###change special coding to NAs
+sel <- names(dataselall)
+dataselall[sel] <- lapply(dataselall[sel], function(x) replace(x,x %in% 99975:99999, NA))
+
+###get Proband_IDs
+probands_zz_nr <- dataselall$zz_nr ### 425 Probands
+
+###get SHIPdata
+SHIPt <- read_dta(file = "ship_2016_114_md_t0_20200206.dta")
+SHIPs0 <- read_dta(file = "ship_2016_114_md_s0_20200206.dta")
+SHIPs2 <- read_dta(file = "ship_2016_114_md_s2_20200206.dta")
+
+###select for probands
+P_SHIPt <- SHIPt %>% filter(zz_nr %in% probands_zz_nr) ### 374 Probands
+P_SHIPs2 <- SHIPs2 %>% filter(zz_nr %in% probands_zz_nr) ### 51 Probands
+P_SHIPs0 <- SHIPs0 %>% filter(zz_nr %in% probands_zz_nr) ### 51 Probands > same as s2 but sampled 5 years earlier - probably leave out as too few for longitudinal analyses
+
+
+###select for key variables and bind rows
+P_SHIPt_var <- P_SHIPt %>% select(c("zz_nr","SEX_SHIP_T0","AGE_SHIP_T0","t0_ernaehr_01","t0_ernaehr_13","t0_diab_02","t0_stro_02","t0_mi_02","cca_lmean","cca_rmean"))
+P_SHIPs2_var <- P_SHIPs2 %>% select(c("zz_nr","SEX_SHIP2","AGE_SHIP2","s2_ernaehr_01","s2_ernaehr_13","s2_diab_02","s2_stro_02","s2_mi_02","cca_lmean","cca_rmean"))
+
+P_SHIPt_SHIP2_var <- rbind(as.matrix(P_SHIPt_var),as.matrix(P_SHIPs2_var)) %>% as_tibble()
+P_SHIPt_SHIP2_var_tma <- P_SHIPt_SHIP2_var %>% left_join(dataselall)
+
+###some cleaning
+P_SHIPt_SHIP2_var_tma$t0_diab_02[P_SHIPt_SHIP2_var_tma$t0_diab_02 > 0] <- 1 # t0_diab_02 IST NUR INDIKATOR FÜR BEHANDLUNGSART
+P_SHIPt_SHIP2_var_tma$t0_mi_02[P_SHIPt_SHIP2_var_tma$t0_mi_02 > 0] <- 1
+P_SHIPt_SHIP2_var_tma$t0_stro_02[P_SHIPt_SHIP2_var_tma$t0_stro_02 > 0] <- 1
+
+P_SHIPt_SHIP2_var_tma$t0_diab_02[is.na(P_SHIPt_SHIP2_var_tma$t0_diab_02)] <- 0
+P_SHIPt_SHIP2_var_tma$t0_mi_02[is.na(P_SHIPt_SHIP2_var_tma$t0_mi_02)] <- 0
+P_SHIPt_SHIP2_var_tma$t0_stro_02[is.na(P_SHIPt_SHIP2_var_tma$t0_stro_02)] <- 0
+
+outliers <- function(model) {
+     cooksd <- cooks.distance(model)
+     plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks distance")  # plot cook's distance
+     abline(h = 4*mean(cooksd, na.rm=T), col="red")  # add cutoff line
+     text(x=1:length(cooksd)+1, y=cooksd-mean(cooksd), labels=ifelse(cooksd>4*mean(cooksd, na.rm=T),names(cooksd),""), col="red")    
+}
+
+```
+
+# Explore variables
+
+```{r}
+data <-  P_SHIPt_SHIP2_var_tma %>%
+         transmute(meat = case_when(t0_ernaehr_01 == 1 ~ 4,  # Täglich Fleisch
+                                    t0_ernaehr_01 == 4 ~ 3,
+                                    t0_ernaehr_01 == 5 ~ 2,
+                                    t0_ernaehr_01 == 6 ~ 1), # Nie oder fast nie Fleisch
+                   eggs = case_when(t0_ernaehr_13 == 6 ~ 1,
+                                    t0_ernaehr_13 == 5 ~ 2,
+                                    t0_ernaehr_13 == 4 ~ 3,
+                                    t0_ernaehr_13 == 3 ~ 4,
+                                    t0_ernaehr_13 == 2 ~ 5,
+                                    t0_ernaehr_13 == 1 ~ 6),
+                   meat_cat = case_when(t0_ernaehr_01 == 1 ~ 1,
+                                        t0_ernaehr_01 == 4 ~ 0,
+                                        t0_ernaehr_01 == 5 ~ 0,
+                                        t0_ernaehr_01 == 6 ~ 0),
+          gender = case_when(SEX_SHIP_T0 == 2 ~ 0,  #Weiblich
+                             SEX_SHIP_T0 == 1 ~ 1), # Männlich
+          age = AGE_SHIP_T0,
+          cutc = stool_dna_tma_cutc,
+          cnta = stool_dna_tma_cnta,
+          grdh = stool_dna_tma_grdh,
+          tmao = omics_tma_tmao,
+          choline = omics_tma_choline,
+          betaine = omics_tma_betaine,
+          carnitine = omics_tma_carnitine,
+          IMT_mean = (cca_lmean+cca_rmean)/2,
+          diabetes = t0_diab_02,
+          stroke = t0_stro_02,
+          mi = t0_mi_02,
+          ID = zz_nr) %>%
+          convert(fct(stroke,mi,diabetes)) %>%
+          set_variable_labels(IMT_mean = "cca_lmean+cca_rmean/2")
+
+
+```
+
+
+```{r Metabolites, echo=FALSE}
+data %>% select(meat,meat_cat,eggs,age,stroke,mi,diabetes,choline,betaine,carnitine,tmao,cutc,cnta,IMT_mean) %>% dfSummary() %>% print(method="render")
+```
+
+
+## Correlations
+
+```{r}
+data_corr <- data %>%
+        select_if(is.numeric) %>% select(-ID) %>% as.matrix() %>% cor(method="spearman",use="pairwise.complete.obs")
+
+corrplot(data_corr,method="number")
+```
+
+# Analyses
+
+## Direct effect of diet on IMT and TMAO
+
+#### IMT
+```{r}
+fit1 <- lm((IMT_mean)~meat_cat,data=data)
+fit2 <- lm((IMT_mean)~meat_cat+age,data=data)
+fit3 <- lm((IMT_mean)~meat_cat+age+gender,data=data)
+
+huxreg(fit1,fit2,fit3)
+```
+
+#### TMAO
+```{r}
+fit1 <- lm(log(tmao)~meat_cat,data=data)
+fit2 <- lm(log(tmao)~meat_cat+age,data=data)
+fit3 <- lm(log(tmao)~meat_cat+age+gender,data=data)
+
+huxreg(fit1,fit2,fit3)
+```
+
+## Effect of TMAO on IMT
+```{r}
+fit1 <- lm(IMT_mean~log2(tmao),data=data)
+fit2 <- lm(IMT_mean~log2(tmao)+age,data=data)
+fit3 <- lm(IMT_mean~log2(tmao)+age+gender,data=data)
+
+huxreg(fit1,fit2,fit3)
+```
+
+
+## Level 1 - Effect of diet on metabolites and microbiota
+
+#### Effect of diet on choline
+```{r}
+fit1 <- lm(log(choline)~meat_cat,data=data)
+fit2 <- lm(log(choline)~meat_cat+age,data=data)
+fit3 <- lm(log(choline)~meat_cat+gender+age,data=data)
+fit4 <- lm(log(choline)~gender+age,data=data)
+
+huxreg(fit1,fit2,fit3,fit4)
+```
+
+#### Effect of diet on carnitine
+```{r}
+fit1 <- lm(log(carnitine)~meat_cat,data=data)
+fit2 <- lm(log(carnitine)~meat_cat+age,data=data)
+fit3 <- lm(log(carnitine)~meat_cat+gender+age,data=data)
+fit4 <- lm(log(carnitine)~gender+age,data=data)
+
+huxreg(fit1,fit2,fit3,fit4)
+```
+
+#### Effect of diet on betaine
+```{r}
+fit1 <- lm(log(betaine)~meat_cat,data=data)
+fit2 <- lm(log(betaine)~meat_cat+age,data=data)
+fit3 <- lm(log(betaine)~meat_cat+gender+age,data=data)
+fit4 <- lm(log(betaine)~gender+age,data=data)
+
+huxreg(fit1,fit2,fit3,fit4)
+```
+
+#### Effect of diet on CutC
+```{r}
+fit1 <- lm(log(cutc)~meat_cat,data=data)
+fit2 <- lm(log(cutc)~meat_cat+age,data=data)
+fit3 <- lm(log(cutc)~meat_cat+age+gender,data=data)
+
+huxreg(fit1,fit2,fit3)
+```
+
+#### Effect of diet on CntA
+
+Here, analyses were performed on the subset of observations with cnta levels above 0.
+```{r}
+dat_cnta <- data %>% filter(cnta > 0)
+
+fit1 <- lm(log(cnta)~meat_cat,data=dat_cnta)
+fit2 <- lm(log(cnta)~meat_cat+age,data=dat_cnta)
+fit3 <- lm(log(cnta)~meat_cat+age+gender,data=dat_cnta)
+
+huxreg(fit1,fit2,fit3)
+```
+
+#### Effect of diet on GrdH
+Here, analyses were performed on the subset of observations with grdh levels above 0.
+```{r}
+dat_grdh <- data %>% filter(grdh > 0)
+
+fit1 <- lm(log(grdh)~meat_cat,data=dat_grdh)
+fit2 <- lm(log(grdh)~meat_cat+age,data=dat_grdh)
+fit3 <- lm(log(grdh)~meat_cat+age+gender,data=dat_grdh)
+
+huxreg(fit1,fit2,fit3)
+```
+
+
+## Level 2 - Effects of metabolites on TMAO levels
+
+#### Effect of choline on TMAO levels
+
+Aufgrund der extremen Skalen, habe ich die Prädiktoren hier skaliert.
+```{r}
+fit_tmao1 <- lm(log(tmao)~scale(choline),data=data)
+fit_tmao2 <- lm(log(tmao)~scale(carnitine),data=data)
+fit_tmao3 <- lm(log(tmao)~scale(betaine),data=data)
+fit_tmao4 <- lm(log(tmao)~scale(choline)+scale(betaine)+scale(carnitine),data=data)
+
+
+huxreg(fit_tmao1,fit_tmao2,fit_tmao3,fit_tmao4)
+```
+
+
+## Some ideas
+
+### Principal Component Analysis
+
+We can perform principal component analysis to find linear combinations of the gene and metabolite variables. As we can see in the second plot, PC1 mainly captures the metabolites, while PC2 captures the gene expressions. We may use these principal components as a proxy for the effect of metabolites (PC1) and bacteria (PC2) on TMAO levels.
+
+
+```{r}
+pca.res <- data %>%
+        filter(complete.cases(.)) %>%
+        dplyr::select(cutc,cnta,grdh,choline,betaine,carnitine) %>%
+        PCA(scale.unit = T,ncp=2)
+
+
+pca_dat <- data %>%
+        filter(complete.cases(.)) %>%
+        mutate(PC1=pca.res$ind$coord[,1],
+               PC2=pca.res$ind$coord[,2])
+
+fit1 <- lm(log(tmao)~PC1,data=pca_dat)
+fit2 <- lm(log(tmao)~PC2,data=pca_dat)
+fit3 <- lm(log(tmao)~PC1+PC2,data=pca_dat)
+fit4 <- lm(log(tmao)~PC1*PC2,data=pca_dat)
+
+
+fit5 <- lm(log(tmao)~PC1+age+gender,data=pca_dat)
+fit6 <- lm(log(tmao)~PC2+age+gender,data=pca_dat)
+fit7 <- lm(log(tmao)~PC1+PC2+age+gender,data=pca_dat)
+fit8 <- lm(log(tmao)~PC1*PC2+age+gender,data=pca_dat)
+
+
+huxreg(fit1,fit2,fit3,fit4)
+
+huxreg(fit5,fit6,fit7,fit8)
+```
+
