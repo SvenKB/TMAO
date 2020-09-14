@@ -2,12 +2,28 @@
 title: "SHIP TMAO"
 author: "Sven Kleine Bardenhorst"
 date: "27 5 2020"
-output: html_document
+output:
+  rmdformats::material:
+    highlight: kate
+    thumbnails: true
+    code_folding: show
+    fig_width: 10
+    fig_height: 6
+    df_print: kable
 ---
+
+```{css, echo = FALSE}
+.header-panel {
+    background-color: #940a21;
+    min-height: 144px;
+    position: relative;
+    z-index: 3;
+}
+```
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
 ```
 
 ```{r Load libraries, include=FALSE}
@@ -25,6 +41,10 @@ library(xtable)
 library(huxtable)
 library(corrplot)
 library(FactoMineR)
+library(sjPlot)
+library(MASS)
+library(kableExtra)
+library(reshape2)
 library("rgl")
 
 st_options(bootstrap.css     = FALSE,       # Already part of the theme so no need for it
@@ -34,22 +54,35 @@ st_options(bootstrap.css     = FALSE,       # Already part of the theme so no ne
            footnote          = NA,          # Keeping the results minimalistic
            subtitle.emphasis = FALSE,       # For the vignette theme, this gives
            headings = F)       
-                                            # much better results. Your mileage may vary.
+                                           
 ```
 
 ```{r Load data, include=FALSE}
 mydata <- read_dta(file = "ship_2019_137_md_s2t0_20200327.dta")
 #summary(mydata)
 glimpse(mydata)
-data <- mydata %>% select(c("zz_nr","stool_dna_tma_cutc","stool_dna_tma_cnta","stool_dna_tma_grdh","omics_tma_tmao","omics_tma_choline","omics_tma_betaine","omics_tma_carnitine","stool_dna_tma_16s_rdna"))
-#dataselall <- data %>% filter(stool_dna_tma_cutc < 99975 | stool_dna_tma_cutc > 9999)  %>% filter(stool_dna_tma_cnta < 99975 | stool_dna_tma_cnta > 99999) %>% filter(stool_dna_tma_grdh < 99975 | stool_dna_tma_grdh > 99999) %>% filter(omics_tma_tmao < 99975 | omics_tma_tmao > 99999)  %>% filter(omics_tma_choline < 99975 | omics_tma_choline > 99999) %>% filter(omics_tma_betaine < 99975 | omics_tma_betaine > 99999) %>% filter(omics_tma_carnitine < 99975 | omics_tma_carnitine > 99999) %>% filter(stool_dna_tma_16s_rdna < 99975 | stool_dna_tma_16s_rdna > 99999)
+data <- mydata %>% dplyr::select(c("zz_nr","stool_dna_tma_cutc","stool_dna_tma_cnta","stool_dna_tma_grdh","omics_tma_tmao","omics_tma_choline","omics_tma_betaine","omics_tma_carnitine","stool_dna_tma_16s_rdna"))
+#dataselall <- data %>%
+#        filter(stool_dna_tma_cutc < 99975 | stool_dna_tma_cutc > 99999)  %>%
+#        filter(stool_dna_tma_cnta < 99975 | stool_dna_tma_cnta > 99999) %>%
+#        filter(stool_dna_tma_grdh < 99975 | stool_dna_tma_grdh > 99999) %>%
+#        filter(omics_tma_tmao < 99975 | omics_tma_tmao > 99999)  %>%
+#        filter(omics_tma_choline < 99975 | omics_tma_choline > 99999) %>%
+#        filter(omics_tma_betaine < 99975 | omics_tma_betaine > 99999) %>%
+#        filter(omics_tma_carnitine < 99975 | omics_tma_carnitine > 99999) 
+
+
+#data %>% filter(stool_dna_tma_16s_rdna > 99975 | stool_dna_tma_16s_rdna < 99999) %>% summarize( cutc = sum(stool_dna_tma_cutc < 99975 | stool_dna_tma_cutc > 99999))
 
 #select based on 16S as all have it
 dataselall <- data %>% filter(stool_dna_tma_16s_rdna < 99975 | stool_dna_tma_16s_rdna > 99999)
+#dataselall <- data
 
 ###change special coding to NAs
 sel <- names(dataselall)
 dataselall[sel] <- lapply(dataselall[sel], function(x) replace(x,x %in% 99975:99999, NA))
+
+
 
 ###get Proband_IDs
 probands_zz_nr <- dataselall$zz_nr ### 425 Probands
@@ -64,10 +97,33 @@ P_SHIPt <- SHIPt %>% filter(zz_nr %in% probands_zz_nr) ### 374 Probands
 P_SHIPs2 <- SHIPs2 %>% filter(zz_nr %in% probands_zz_nr) ### 51 Probands
 P_SHIPs0 <- SHIPs0 %>% filter(zz_nr %in% probands_zz_nr) ### 51 Probands > same as s2 but sampled 5 years earlier - probably leave out as too few for longitudinal analyses
 
-
 ###select for key variables and bind rows
-P_SHIPt_var <- P_SHIPt %>% select(c("zz_nr","SEX_SHIP_T0","AGE_SHIP_T0","t0_ernaehr_01","t0_ernaehr_13","t0_diab_02","t0_stro_02","t0_mi_02","cca_lmean","cca_rmean"))
-P_SHIPs2_var <- P_SHIPs2 %>% select(c("zz_nr","SEX_SHIP2","AGE_SHIP2","s2_ernaehr_01","s2_ernaehr_13","s2_diab_02","s2_stro_02","s2_mi_02","cca_lmean","cca_rmean"))
+P_SHIPt_var <- P_SHIPt %>% dplyr::select(c("zz_nr","SEX_SHIP_T0","AGE_SHIP_T0",
+                                    "t0_alko_02", # Alohol
+                                    "t0_rau_01", # Raucher
+                                    "t0_ernaehr_01", # Fleisch
+                                    "t0_ernaehr_07", # Reis 
+                                    "t0_ernaehr_08", # Salat / Gemüse, roh 
+                                    "t0_ernaehr_09", # Gemüse, gekocht 
+                                    "t0_ernaehr_11", # Vollkornbrot 
+                                    "t0_ernaehr_10", # Obst
+                                    "t0_ernaehr_13",
+                                    #"ffs_pattern_t0",
+                                    #"ffs_t0",
+                                    "t0_diab_02","t0_stro_02","t0_mi_02","cca_lmean","cca_rmean"))
+P_SHIPs2_var <- P_SHIPs2 %>% dplyr::select(c("zz_nr","SEX_SHIP2","AGE_SHIP2",
+                                      "s2_alko_02", # Alohol
+                                      "s2_rau_01", # Raucher
+                                      "s2_ernaehr_01",
+                                      "s2_ernaehr_07",
+                                      "s2_ernaehr_08",
+                                      "s2_ernaehr_09",
+                                      "s2_ernaehr_11",
+                                      "s2_ernaehr_10",
+                                      "s2_ernaehr_13",
+                                      #"ffs_pattern_s2",
+                                      #"ffs_s2",
+                                      "s2_diab_02","s2_stro_02","s2_mi_02","cca_lmean","cca_rmean"))
 
 P_SHIPt_SHIP2_var <- rbind(as.matrix(P_SHIPt_var),as.matrix(P_SHIPs2_var)) %>% as_tibble()
 P_SHIPt_SHIP2_var_tma <- P_SHIPt_SHIP2_var %>% left_join(dataselall)
@@ -93,8 +149,12 @@ outliers <- function(model) {
 # Explore variables
 
 ```{r}
+detect_limit_cnta <- min(P_SHIPt_SHIP2_var_tma$stool_dna_tma_cnta[P_SHIPt_SHIP2_var_tma$stool_dna_tma_cnta > 0])
+detect_limit_grdh <- min(P_SHIPt_SHIP2_var_tma$stool_dna_tma_grdh[P_SHIPt_SHIP2_var_tma$stool_dna_tma_grdh > 0])
+
 data <-  P_SHIPt_SHIP2_var_tma %>%
-         transmute(meat = case_when(t0_ernaehr_01 == 1 ~ 4,  # Täglich Fleisch
+         transmute(zz_nr = zz_nr,
+                   meat = case_when(t0_ernaehr_01 == 1 ~ 4,  # Täglich Fleisch
                                     t0_ernaehr_01 == 4 ~ 3,
                                     t0_ernaehr_01 == 5 ~ 2,
                                     t0_ernaehr_01 == 6 ~ 1), # Nie oder fast nie Fleisch
@@ -112,8 +172,10 @@ data <-  P_SHIPt_SHIP2_var_tma %>%
                              SEX_SHIP_T0 == 1 ~ 1), # Männlich
           age = AGE_SHIP_T0,
           cutc = stool_dna_tma_cutc,
-          cnta = stool_dna_tma_cnta,
-          grdh = stool_dna_tma_grdh,
+          cnta = case_when(stool_dna_tma_cnta > 0 ~ stool_dna_tma_cnta,
+                           stool_dna_tma_cnta == 0 ~ detect_limit_cnta/sqrt(2)),
+          grdh = case_when(stool_dna_tma_grdh > 0 ~ stool_dna_tma_grdh,
+                           stool_dna_tma_grdh == 0 ~ detect_limit_grdh/sqrt(2)),
           tmao = omics_tma_tmao,
           choline = omics_tma_choline,
           betaine = omics_tma_betaine,
@@ -124,14 +186,16 @@ data <-  P_SHIPt_SHIP2_var_tma %>%
           mi = t0_mi_02,
           ID = zz_nr) %>%
           convert(fct(stroke,mi,diabetes)) %>%
-          set_variable_labels(IMT_mean = "cca_lmean+cca_rmean/2")
-
+          set_variable_labels(IMT_mean = "IMT_mean")
 
 ```
 
 
 ```{r Metabolites, echo=FALSE}
-data %>% select(meat,meat_cat,eggs,age,stroke,mi,diabetes,choline,betaine,carnitine,tmao,cutc,cnta,IMT_mean) %>% dfSummary() %>% print(method="render")
+data %>%
+  dplyr::select(meat,meat_cat,eggs,age,stroke,mi,diabetes,choline,betaine,carnitine,tmao,cutc,cnta,IMT_mean) %>%
+  dfSummary() %>%
+  print(max.tbl.width = 20,method="render")
 ```
 
 
@@ -139,7 +203,7 @@ data %>% select(meat,meat_cat,eggs,age,stroke,mi,diabetes,choline,betaine,carnit
 
 ```{r}
 data_corr <- data %>%
-        select_if(is.numeric) %>% select(-ID) %>% as.matrix() %>% cor(method="spearman",use="pairwise.complete.obs")
+        dplyr::select_if(is.numeric) %>% dplyr::select(-ID) %>% as.matrix() %>% cor(method="spearman",use="pairwise.complete.obs")
 
 corrplot(data_corr,method="number")
 ```
@@ -149,12 +213,15 @@ corrplot(data_corr,method="number")
 ## Direct effect of diet on IMT and TMAO
 
 #### IMT
-```{r}
+```{r echo=FALSE}
 fit1 <- lm((IMT_mean)~meat_cat,data=data)
 fit2 <- lm((IMT_mean)~meat_cat+age,data=data)
 fit3 <- lm((IMT_mean)~meat_cat+age+gender,data=data)
 
-huxreg(fit1,fit2,fit3)
+tab_model(fit1,fit2,fit3)
+
+#htmltools::includeHTML("IMT_output.html")
+
 ```
 
 #### TMAO
@@ -163,7 +230,9 @@ fit1 <- lm(log(tmao)~meat_cat,data=data)
 fit2 <- lm(log(tmao)~meat_cat+age,data=data)
 fit3 <- lm(log(tmao)~meat_cat+age+gender,data=data)
 
-huxreg(fit1,fit2,fit3)
+tab_model(fit1,fit2,fit3)
+
+#htmltools::includeHTML("TMAO_output.html")
 ```
 
 ## Effect of TMAO on IMT
@@ -172,8 +241,20 @@ fit1 <- lm(IMT_mean~log2(tmao),data=data)
 fit2 <- lm(IMT_mean~log2(tmao)+age,data=data)
 fit3 <- lm(IMT_mean~log2(tmao)+age+gender,data=data)
 
-huxreg(fit1,fit2,fit3)
+tab_model(fit1,fit2,fit3)
+
+#htmltools::includeHTML("IMT_TMAO_output.html")
 ```
+
+## Effect of bact on IMT
+```{r}
+fit1 <- lm(IMT_mean~log(cutc),data=data)
+fit2 <- lm(IMT_mean~log(cnta),data=data)
+fit3 <- lm(IMT_mean~log(grdh),data=data)
+
+tab_model(fit1,fit2,fit3)
+```
+
 
 
 ## Level 1 - Effect of diet on metabolites and microbiota
@@ -185,7 +266,9 @@ fit2 <- lm(log(choline)~meat_cat+age,data=data)
 fit3 <- lm(log(choline)~meat_cat+gender+age,data=data)
 fit4 <- lm(log(choline)~gender+age,data=data)
 
-huxreg(fit1,fit2,fit3,fit4)
+tab_model(fit1,fit2,fit3,fit4)
+
+#htmltools::includeHTML("choline_output.html")
 ```
 
 #### Effect of diet on carnitine
@@ -195,7 +278,11 @@ fit2 <- lm(log(carnitine)~meat_cat+age,data=data)
 fit3 <- lm(log(carnitine)~meat_cat+gender+age,data=data)
 fit4 <- lm(log(carnitine)~gender+age,data=data)
 
-huxreg(fit1,fit2,fit3,fit4)
+anova(fit3)
+
+tab_model(fit1,fit2,fit3,fit4)
+
+#htmltools::includeHTML("carnitine_output.html")
 ```
 
 #### Effect of diet on betaine
@@ -205,7 +292,9 @@ fit2 <- lm(log(betaine)~meat_cat+age,data=data)
 fit3 <- lm(log(betaine)~meat_cat+gender+age,data=data)
 fit4 <- lm(log(betaine)~gender+age,data=data)
 
-huxreg(fit1,fit2,fit3,fit4)
+tab_model(fit1,fit2,fit3,fit4)
+
+#htmltools::includeHTML("betaine_output.html")
 ```
 
 #### Effect of diet on CutC
@@ -214,38 +303,38 @@ fit1 <- lm(log(cutc)~meat_cat,data=data)
 fit2 <- lm(log(cutc)~meat_cat+age,data=data)
 fit3 <- lm(log(cutc)~meat_cat+age+gender,data=data)
 
-huxreg(fit1,fit2,fit3)
+tab_model(fit1,fit2,fit3)
+
+#htmltools::includeHTML("cutc_output.html")
 ```
 
 #### Effect of diet on CntA
 
 Here, analyses were performed on the subset of observations with cnta levels above 0.
 ```{r}
-dat_cnta <- data %>% filter(cnta > 0)
+fit1 <- lm(log(cnta)~meat_cat,data=data)
+fit2 <- lm(log(cnta)~meat_cat+age,data=data)
+fit3 <- lm(log(cnta)~meat_cat+age+gender,data=data)
 
-fit1 <- lm(log(cnta)~meat_cat,data=dat_cnta)
-fit2 <- lm(log(cnta)~meat_cat+age,data=dat_cnta)
-fit3 <- lm(log(cnta)~meat_cat+age+gender,data=dat_cnta)
+tab_model(fit1,fit2,fit3)
 
-huxreg(fit1,fit2,fit3)
+#htmltools::includeHTML("cnta_output.html")
 ```
 
 #### Effect of diet on GrdH
 Here, analyses were performed on the subset of observations with grdh levels above 0.
 ```{r}
-dat_grdh <- data %>% filter(grdh > 0)
+fit1 <- lm(log(grdh)~meat_cat,data=data)
+fit2 <- lm(log(grdh)~meat_cat+age,data=data)
+fit3 <- lm(log(grdh)~meat_cat+age+gender,data=data)
 
-fit1 <- lm(log(grdh)~meat_cat,data=dat_grdh)
-fit2 <- lm(log(grdh)~meat_cat+age,data=dat_grdh)
-fit3 <- lm(log(grdh)~meat_cat+age+gender,data=dat_grdh)
+tab_model(fit1,fit2,fit3)
 
-huxreg(fit1,fit2,fit3)
+#htmltools::includeHTML("grdh_output.html")
 ```
 
 
 ## Level 2 - Effects of metabolites on TMAO levels
-
-#### Effect of choline on TMAO levels
 
 Aufgrund der extremen Skalen, habe ich die Prädiktoren hier skaliert.
 ```{r}
@@ -255,8 +344,50 @@ fit_tmao3 <- lm(log(tmao)~scale(betaine),data=data)
 fit_tmao4 <- lm(log(tmao)~scale(choline)+scale(betaine)+scale(carnitine),data=data)
 
 
-huxreg(fit_tmao1,fit_tmao2,fit_tmao3,fit_tmao4)
+tab_model(fit_tmao1,fit_tmao2,fit_tmao3,fit_tmao4)
+
+#htmltools::includeHTML("tmaom_output.html")
 ```
+
+## Effect of microbiota on TMAO
+```{r}
+fit1 <- lm(log(tmao)~log(cutc),data=data)
+fit2 <- lm(log(tmao)~log(cutc)+age,data=data)
+fit3 <- lm(log(tmao)~log(cutc)+age+gender,data=data)
+tab_model(fit1,fit2,fit3)
+```
+
+
+```{r}
+fit1 <- lm(log(tmao)~log(cnta),data=data)
+fit2 <- lm(log(tmao)~log(cnta)+age,data=data)
+fit3 <- lm(log(tmao)~log(cnta)+age+gender,data=data)
+
+tab_model(fit1,fit2,fit3)
+
+
+```
+
+```{r}
+fit1 <- lm(log(tmao)~log(grdh),data=data)
+fit2 <- lm(log(tmao)~log(grdh)+age,data=data)
+fit3 <- lm(log(tmao)~log(grdh)+age+gender,data=data)
+
+tab_model(fit1,fit2,fit3)
+```
+
+```{r}
+fit1 <- lm(log(tmao)~log(cutc)+age+gender,data=data)
+fit2 <- lm(log(tmao)~log(cnta),data=data)
+fit3 <- lm(log(tmao)~scale(grdh),data=data)
+fit4 <- lm(log(tmao)~log(cutc)+log(cnta)+log(grdh),data=data)
+
+tab_model(fit1,fit2,fit3,fit4)
+
+#htmltools::includeHTML("tmao_micro_output.html")
+```
+
+
 
 
 ## Some ideas
@@ -268,13 +399,11 @@ We can perform principal component analysis to find linear combinations of the g
 
 ```{r}
 pca.res <- data %>%
-        filter(complete.cases(.)) %>%
         dplyr::select(cutc,cnta,grdh,choline,betaine,carnitine) %>%
         PCA(scale.unit = T,ncp=2)
 
 
 pca_dat <- data %>%
-        filter(complete.cases(.)) %>%
         mutate(PC1=pca.res$ind$coord[,1],
                PC2=pca.res$ind$coord[,2])
 
@@ -289,9 +418,203 @@ fit6 <- lm(log(tmao)~PC2+age+gender,data=pca_dat)
 fit7 <- lm(log(tmao)~PC1+PC2+age+gender,data=pca_dat)
 fit8 <- lm(log(tmao)~PC1*PC2+age+gender,data=pca_dat)
 
+tab_model(fit1,fit2,fit3,fit4)
+tab_model(fit5,fit6,fit7,fit8)
 
-huxreg(fit1,fit2,fit3,fit4)
-
-huxreg(fit5,fit6,fit7,fit8)
+#htmltools::includeHTML("pca_output.html")
+#htmltools::includeHTML("pca_cov_output.html")
 ```
+
+```{r include=FALSE}
+# Alle Ernährungsvariablen ausprobieren?
+# t0_ernaehr_08 - 16 
+
+# t0_alko_02 Wie oft Alkohol in letzten 12 Monaten?
+
+# t0_rau_01 aktuell Raucher?
+
+# FFS_PATTERN_T0  - Ernährungsmuster nach FFS Score; 1 - ungünstig, 2 - intermediär , 3 - empfehlenswert
+
+
+
+data <- data %>% left_join(P_SHIPt_SHIP2_var_tma)
+
+data <- data %>%
+        mutate(PC1=pca.res$ind$coord[,1],
+               PC2=pca.res$ind$coord[,2])
+
+reverse_scale <- function(x) {abs((max(x)+1)-x)}
+
+data <- data %>% mutate(alcohol = reverse_scale(t0_alko_02),
+                smoker = case_when(t0_rau_01 == 2 ~ 0,
+                                   t0_rau_01 == 1 ~ 1),
+                rice = reverse_scale(t0_ernaehr_07),
+                salad = reverse_scale(t0_ernaehr_08),
+                vegetables = reverse_scale(t0_ernaehr_09),
+                full_grain = reverse_scale(t0_ernaehr_11),
+                fruits = reverse_scale(t0_ernaehr_10))
+
+
+
+```
+                                   
+# Association with confounders
+
+
+## Univariate associations with cutc
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data %>%
+        dplyr::select(meat_cat, smoker, fruits,rice,salad,vegetables,full_grain,eggs) %>%
+        map(~lm(log(data$cutc) ~ .x,data=data)) %>%
+        map(summary) %>%
+        map(coef) %>%
+        map_dbl(function(x) x[[2,4]]) %>%
+        tidy %>%
+        rename(p_value = x) %>%
+        arrange(p_value) %>%
+        mutate(p_value = cell_spec(round(p_value,4),"html",color = ifelse(p_value > 0.05,"black","lightgreen"))) %>%
+        column_to_rownames("names") %>%
+        t %>%
+        kable(format = "html", escape = F) %>%
+        kable_styling(full_width = F)
+
+
+data %>%
+        dplyr::select(cutc,meat_cat, smoker, fruits,rice,salad,vegetables,full_grain,eggs) %>%
+        melt(id="cutc") %>%
+         ggplot(aes(x=as.factor(value),y=cutc,fill=as.factor(value)),data=.) +
+        geom_boxplot(binaxis = "y", stackdir = "center") +
+        scale_y_log10() +
+        facet_grid(~variable,scales="free") 
+
+```
+
+## Univariate associations with cnta
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data %>%
+        dplyr::select(meat_cat, smoker, fruits,rice,salad,vegetables,full_grain,eggs) %>%
+        map(~lm(log(data$cnta) ~ .x,data=data)) %>%
+        map(summary) %>%
+        map(coef) %>%
+        map_dbl(function(x) x[[2,4]]) %>%
+        tidy %>%
+        rename(p_value = x) %>%
+        arrange(p_value) %>%
+        mutate(p_value = cell_spec(round(p_value,4),"html",color = ifelse(p_value > 0.05,"black","lightgreen"))) %>%
+        column_to_rownames("names") %>%
+        t %>%
+        kable(format = "html", escape = F) %>%
+        kable_styling(full_width = F)
+
+data %>%
+        dplyr::select(cnta,meat_cat, smoker, fruits,rice,salad,vegetables,full_grain,eggs) %>%
+        melt(id="cnta") %>%
+        ggplot(aes(x=as.factor(value),y=cnta,fill=as.factor(value)),data=.) +
+        geom_boxplot(binaxis = "y", stackdir = "center") +
+        scale_y_log10() +
+        facet_grid(~variable,scales="free")
+
+```
+
+
+## Univariate associations with grdh
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data %>%
+        dplyr::select(meat_cat, smoker, fruits,rice,salad,vegetables,full_grain,eggs) %>%
+        map(~lm(log(data$grdh) ~ .x,data=data)) %>%
+        map(summary) %>%
+        map(coef) %>%
+        map_dbl(function(x) x[[2,4]]) %>%
+        tidy %>%
+        rename(p_value = x) %>%
+        arrange(p_value) %>%
+        mutate(p_value = cell_spec(round(p_value,4),"html",color = ifelse(p_value > 0.05,"black","lightgreen"))) %>%
+        column_to_rownames("names") %>%
+        t %>%
+        kable(format = "html", escape = F) %>%
+        kable_styling(full_width = F)
+
+data %>%
+        dplyr::select(grdh,meat_cat, smoker, fruits,rice,salad,vegetables,full_grain,eggs) %>%
+        melt(id="grdh") %>%
+        ggplot(aes(x=as.factor(value),y=grdh,fill=as.factor(value)),data=.) +
+        geom_boxplot(binaxis = "y", stackdir = "center") +
+        scale_y_log10() +
+        facet_grid(~variable,scales="free")
+
+```
+
+
+## Univariate associations with principal component 2 - all microbiota
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data %>%
+        dplyr::select(meat_cat, smoker, fruits,rice,salad,vegetables,full_grain,eggs) %>%
+        map(~lm(PC2 ~ .x,data=data)) %>%
+        map(summary) %>%
+        map(coef) %>%
+        map_dbl(function(x) x[[2,4]]) %>%
+        tidy %>%
+        rename(p_value = x) %>%
+        arrange(p_value) %>%
+        mutate(p_value = cell_spec(round(p_value,4),"html",color = ifelse(p_value > 0.05,"black","lightgreen"))) %>%
+        column_to_rownames("names") %>%
+        t %>%
+        kable(format = "html", escape = F) %>%
+        kable_styling(full_width = F)
+
+data %>%
+        dplyr::select(PC2,meat_cat, smoker, fruits,rice,salad,vegetables,full_grain,eggs) %>%
+        melt(id="PC2") %>%
+        ggplot(aes(x=as.factor(value),y=PC2,fill=as.factor(value)),data=.) +
+        geom_boxplot(binaxis = "y", stackdir = "center") +
+        scale_y_log10() +
+        facet_grid(~variable,scales="free")
+```
+
+
+```{r}
+library(table1)
+
+table1(~ factor(meat_cat) + factor(smoker) + fruits + rice + salad + vegetables + full_grain + eggs | as.factor(gender),data=data)
+
+```
+
+##
+```{r}
+data %>%
+  ggplot(aes(x=as.factor(smoker),y=age,fill=as.factor(smoker)),data=.) +
+  geom_boxplot()
+
+fit <- lm(log(cutc)~age+smoker,data=data)
+summary(fit)
+```
+
+
+```{r}
+fit1 <- lm(log(cutc)~fruits+vegetables+gender+age,data=data)
+anova(fit1)
+
+tab_model(fit1)
+
+plot(data$fruits,data$age)
+
+data <- data %>% mutate(gesund = (fruits+vegetables)/2)
+
+fit1 <- lm(log(cutc)~gesund+meat_cat+gender,data=data)
+anova(fit1)
+
+
+tab_model(fit1)
+
+
+```
+
+
+
+
+
+
+
+
+
 
