@@ -1,0 +1,243 @@
+---
+title: "Ship TMAO Analyses"
+author: "Sven Kleine Bardenhorst"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+mail: "s.kleinebardenhorst@uni-muenster.de"
+github: "svenkb"
+home: "epi.uni-muenster.de"
+# !!! You need to provide a logo image here !!! Or just delete the field for no logo
+output:
+  epuRate::epurate:
+    toc: FALSE
+    number_sections: FALSE
+    code_folding: "hide"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE,fig.width = 15)
+```
+
+
+```{css zoom-lib-src, echo = FALSE}
+script src = "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"
+```
+
+```{js zoom-jquery, echo = FALSE}
+ $(document).ready(function() {
+    $('body').prepend('<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>');
+    // onClick function for all plots (img's)
+    $('img:not(.zoomImg)').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src')).css({width: '100%'});
+      $('.zoomDiv').css({opacity: '1', width: 'auto', border: '1px solid white', borderRadius: '5px', position: 'fixed', top: '50%', left: '50%', marginRight: '-50%', transform: 'translate(-50%, -50%)', boxShadow: '0px 0px 50px #888888', zIndex: '50', overflow: 'auto', maxHeight: '100%'});
+    });
+    // onClick function for zoomImg
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').css({opacity: '0', width: '0%'}); 
+    });
+  });
+```
+
+```{r include=FALSE}
+library(tidyverse)
+library(haven)
+library(Hmisc)
+library(dplyr)
+library(knitr)
+library(DiagrammeR)
+library(summarytools)
+library(hablar)
+library(labelled)
+library(car)
+library(xtable)
+library(huxtable)
+library(corrplot)
+library(FactoMineR)
+library(sjPlot)
+library(MASS)
+library(kableExtra)
+library(reshape2)
+library("rgl")
+```
+
+```{r Load data, include=FALSE}
+mydata <- read_dta(file = "ship_2019_137_md_s2t0_20200327.dta")
+#summary(mydata)
+glimpse(mydata)
+data <- mydata %>% dplyr::select(c("zz_nr","stool_dna_tma_cutc","stool_dna_tma_cnta","stool_dna_tma_grdh","omics_tma_tmao","omics_tma_choline","omics_tma_betaine","omics_tma_carnitine","stool_dna_tma_16s_rdna"))
+#dataselall <- data %>%
+#        filter(stool_dna_tma_cutc < 99975 | stool_dna_tma_cutc > 99999)  %>%
+#        filter(stool_dna_tma_cnta < 99975 | stool_dna_tma_cnta > 99999) %>%
+#        filter(stool_dna_tma_grdh < 99975 | stool_dna_tma_grdh > 99999) %>%
+#        filter(omics_tma_tmao < 99975 | omics_tma_tmao > 99999)  %>%
+#        filter(omics_tma_choline < 99975 | omics_tma_choline > 99999) %>%
+#        filter(omics_tma_betaine < 99975 | omics_tma_betaine > 99999) %>%
+#        filter(omics_tma_carnitine < 99975 | omics_tma_carnitine > 99999) 
+
+
+#data %>% filter(stool_dna_tma_16s_rdna > 99975 | stool_dna_tma_16s_rdna < 99999) %>% summarize( cutc = sum(stool_dna_tma_cutc < 99975 | stool_dna_tma_cutc > 99999))
+
+#select based on 16S as all have it
+dataselall <- data %>% filter(stool_dna_tma_16s_rdna < 99975 | stool_dna_tma_16s_rdna > 99999)
+#dataselall <- data
+
+###change special coding to NAs
+sel <- names(dataselall)
+dataselall[sel] <- lapply(dataselall[sel], function(x) replace(x,x %in% 99975:99999, NA))
+
+
+
+###get Proband_IDs
+probands_zz_nr <- dataselall$zz_nr ### 425 Probands
+
+###get SHIPdata
+SHIPt <- read_dta(file = "ship_2016_114_md_t0_20200206.dta")
+SHIPs0 <- read_dta(file = "ship_2016_114_md_s0_20200206.dta")
+SHIPs2 <- read_dta(file = "ship_2016_114_md_s2_20200206.dta")
+
+###select for probands
+P_SHIPt <- SHIPt %>% filter(zz_nr %in% probands_zz_nr) ### 374 Probands
+P_SHIPs2 <- SHIPs2 %>% filter(zz_nr %in% probands_zz_nr) ### 51 Probands
+P_SHIPs0 <- SHIPs0 %>% filter(zz_nr %in% probands_zz_nr) ### 51 Probands > same as s2 but sampled 5 years earlier - probably leave out as too few for longitudinal analyses
+
+###select for key variables and bind rows
+P_SHIPt_var <- P_SHIPt %>% dplyr::select(c("zz_nr","SEX_SHIP_T0","AGE_SHIP_T0",
+                                    "t0_alko_02", # Alohol
+                                    "t0_rau_01", # Raucher
+                                    "t0_ernaehr_01", # Fleisch
+                                    "t0_ernaehr_07", # Reis 
+                                    "t0_ernaehr_08", # Salat / Gemüse, roh 
+                                    "t0_ernaehr_09", # Gemüse, gekocht 
+                                    "t0_ernaehr_11", # Vollkornbrot 
+                                    "t0_ernaehr_10", # Obst
+                                    "t0_ernaehr_13",
+                                    #"ffs_pattern_t0",
+                                    #"ffs_t0",
+                                    "t0_diab_02","t0_stro_02","t0_mi_02","cca_lmean","cca_rmean"))
+P_SHIPs2_var <- P_SHIPs2 %>% dplyr::select(c("zz_nr","SEX_SHIP2","AGE_SHIP2",
+                                      "s2_alko_02", # Alohol
+                                      "s2_rau_01", # Raucher
+                                      "s2_ernaehr_01",
+                                      "s2_ernaehr_07",
+                                      "s2_ernaehr_08",
+                                      "s2_ernaehr_09",
+                                      "s2_ernaehr_11",
+                                      "s2_ernaehr_10",
+                                      "s2_ernaehr_13",
+                                      #"ffs_pattern_s2",
+                                      #"ffs_s2",
+                                      "s2_diab_02","s2_stro_02","s2_mi_02","cca_lmean","cca_rmean"))
+
+P_SHIPt_SHIP2_var <- rbind(as.matrix(P_SHIPt_var),as.matrix(P_SHIPs2_var)) %>% as_tibble()
+P_SHIPt_SHIP2_var_tma <- P_SHIPt_SHIP2_var %>% left_join(dataselall)
+
+###some cleaning
+P_SHIPt_SHIP2_var_tma$t0_diab_02[P_SHIPt_SHIP2_var_tma$t0_diab_02 > 0] <- 1 # t0_diab_02 IST NUR INDIKATOR FÜR BEHANDLUNGSART
+P_SHIPt_SHIP2_var_tma$t0_mi_02[P_SHIPt_SHIP2_var_tma$t0_mi_02 > 0] <- 1
+P_SHIPt_SHIP2_var_tma$t0_stro_02[P_SHIPt_SHIP2_var_tma$t0_stro_02 > 0] <- 1
+
+P_SHIPt_SHIP2_var_tma$t0_diab_02[is.na(P_SHIPt_SHIP2_var_tma$t0_diab_02)] <- 0
+P_SHIPt_SHIP2_var_tma$t0_mi_02[is.na(P_SHIPt_SHIP2_var_tma$t0_mi_02)] <- 0
+P_SHIPt_SHIP2_var_tma$t0_stro_02[is.na(P_SHIPt_SHIP2_var_tma$t0_stro_02)] <- 0
+
+outliers <- function(model) {
+     cooksd <- cooks.distance(model)
+     plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks distance")  # plot cook's distance
+     abline(h = 4*mean(cooksd, na.rm=T), col="red")  # add cutoff line
+     text(x=1:length(cooksd)+1, y=cooksd-mean(cooksd), labels=ifelse(cooksd>4*mean(cooksd, na.rm=T),names(cooksd),""), col="red")    
+}
+
+```
+
+# Explore variables
+
+```{r}
+detect_limit_cnta <- min(P_SHIPt_SHIP2_var_tma$stool_dna_tma_cnta[P_SHIPt_SHIP2_var_tma$stool_dna_tma_cnta > 0])
+detect_limit_grdh <- min(P_SHIPt_SHIP2_var_tma$stool_dna_tma_grdh[P_SHIPt_SHIP2_var_tma$stool_dna_tma_grdh > 0])
+
+data <-  P_SHIPt_SHIP2_var_tma %>%
+         transmute(zz_nr = zz_nr,
+                   meat = case_when(t0_ernaehr_01 == 1 ~ 4,  # Täglich Fleisch
+                                    t0_ernaehr_01 == 4 ~ 3,
+                                    t0_ernaehr_01 == 5 ~ 2,
+                                    t0_ernaehr_01 == 6 ~ 1), # Nie oder fast nie Fleisch
+                   eggs = case_when(t0_ernaehr_13 == 6 ~ 1,
+                                    t0_ernaehr_13 == 5 ~ 2,
+                                    t0_ernaehr_13 == 4 ~ 3,
+                                    t0_ernaehr_13 == 3 ~ 4,
+                                    t0_ernaehr_13 == 2 ~ 5,
+                                    t0_ernaehr_13 == 1 ~ 6),
+                   meat_cat = case_when(t0_ernaehr_01 == 1 ~ 1,
+                                        t0_ernaehr_01 == 4 ~ 0,
+                                        t0_ernaehr_01 == 5 ~ 0,
+                                        t0_ernaehr_01 == 6 ~ 0),
+          gender = case_when(SEX_SHIP_T0 == 2 ~ 0,  #Weiblich
+                             SEX_SHIP_T0 == 1 ~ 1), # Männlich
+          rdna = stool_dna_tma_16s_rdna,
+          age = AGE_SHIP_T0,
+          cutc = stool_dna_tma_cutc,
+          cnta = case_when(stool_dna_tma_cnta > 0 ~ stool_dna_tma_cnta,
+                           stool_dna_tma_cnta == 0 ~ detect_limit_cnta/sqrt(2)),
+          grdh = case_when(stool_dna_tma_grdh > 0 ~ stool_dna_tma_grdh,
+                           stool_dna_tma_grdh == 0 ~ detect_limit_grdh/sqrt(2)),
+          tmao = omics_tma_tmao,
+          choline = omics_tma_choline,
+          betaine = omics_tma_betaine,
+          carnitine = omics_tma_carnitine,
+          IMT_mean = (cca_lmean+cca_rmean)/2,
+          diabetes = t0_diab_02,
+          stroke = t0_stro_02,
+          mi = t0_mi_02,
+          ID = zz_nr) %>%
+          convert(fct(stroke,mi,diabetes)) %>%
+          set_variable_labels(IMT_mean = "IMT_mean")# %>%
+  #mutate(cutc = cutc/rdna,
+   #      cnta = cnta/rdna,
+    #     grdh = grdh/rdna)
+
+```
+
+
+```{r Metabolites, echo=FALSE}
+data %>%
+  dplyr::select(meat,meat_cat,eggs,age,stroke,mi,diabetes,choline,betaine,carnitine,tmao,cutc,cnta,IMT_mean) %>%
+  dfSummary() %>%
+  print(max.tbl.width = 20,method="render")
+```
+
+
+## Correlations
+
+```{r fig.height=15, fig.width=15}
+data_corr <- data %>%
+        dplyr::select_if(is.numeric) %>% dplyr::select(-ID) %>% as.matrix() %>% cor(method="spearman",use="pairwise.complete.obs")
+
+corrplot(data_corr,method="number")
+```
+
+```{r}
+reverse_scale <- function(x) {abs((max(x)+1)-x)}
+data <- data %>% left_join(P_SHIPt_SHIP2_var_tma)
+
+data <- data %>% mutate(alcohol = reverse_scale(t0_alko_02),
+                smoker = case_when(t0_rau_01 == 2 ~ 0,
+                                   t0_rau_01 == 1 ~ 1),
+                rice = reverse_scale(t0_ernaehr_07),
+                salad = reverse_scale(t0_ernaehr_08),
+                vegetables = reverse_scale(t0_ernaehr_09),
+                full_grain = reverse_scale(t0_ernaehr_11),
+                fruits = reverse_scale(t0_ernaehr_10))
+
+```
+
+
+# Effects of meat intake on metabolites
+## Choline
+```{r}
+fit1 <- lm(log(choline)~meat_cat,data=data)
+fit2 <- lm(log(choline)~meat_cat+age,data=data)
+fit3 <- lm(log(choline)~meat_cat+gender+age,data=data)
+
+tab_model(fit1,fit2,fit3)
+```
+
