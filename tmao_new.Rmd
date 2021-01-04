@@ -901,6 +901,7 @@ fit3 <- sub_dat %>% filter(gender==1) %>% lm(log(cnta)~meat_cat,data=.)
 fit4 <- sub_dat %>% lm(log(cnta)~meat_cat*gender,data=.) 
 fit5 <- sub_dat %>% lm(log(cnta)~meat_cat+gender,data=.) 
 
+
 tab_model(fit1,fit2,fit3,fit4,fit5,dv.labels = c("Unadjusted", "Female","Male","Interaction","Adjusted"))
 ```
 
@@ -1052,6 +1053,22 @@ total := abc + e
 
 model <- '
 # measurement
+hdiet =~ vegetables + fruits + salad
+bacs =~  cnta + cutc
+
+# regression
+bacs ~ hdiet
+tmao ~ age + bacs
+hdiet ~ age
+bacs	~	age
+
+# covariances
+
+# indirect effects
+'
+
+model <- '
+# measurement
 hdiet =~ vegetables + fruits + grain
 bacs =~  cnta + cutc
 
@@ -1066,24 +1083,23 @@ bacs	~	age
 # indirect effects
 '
 
-# indirect effects
-#abc := (a*b)*c
-#dc := d*c
-#total := abc+dc + e
-
-fit_sem <- lavaan::sem(model=model,data=data1,estimator="MLMVS")
+fit_sem <- lavaan::sem(model=model,data=data1,estimator="WLSM")
 
 lavaan:::summary(fit_sem,standardize=T)
-#lavaan::modificationindices(fit_sem)
+lavaan::modificationindices(fit_sem)
 lavaan::fitMeasures(fit_sem,c("cfi","rmsea","srmr","df"))
 
+
+parameterestimates(fit_sem,standardized = T)
+
 #lavaan::parameterEstimates(fit_sem)
-semPlot::semPaths(fit_sem,"std",title = T)
+semPlot::semPaths(fit_sem,"est",title = T,intercepts = F)
 
-fit_sem_gender <- lavaan::sem(model=model,data=data1,estimator="MLMVS",group="gender")
+fit_sem_gender <- lavaan::sem(model=model,data=data1,estimator="WLSM",group="gender")
 
-lavaan:::summary(fit_sem_gender,standardize=T)
+lavaan:::summary(fit_sem_gender,standardize=F)
 lavaan::fitMeasures(fit_sem_gender,c("cfi","rmsea","srmr"))
+
 
 ```
 
