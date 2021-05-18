@@ -121,7 +121,7 @@ P_SHIPt_var <- P_SHIPt %>% dplyr::select(c("zz_nr","SEX_SHIP_T0","AGE_SHIP_T0",
                                     #"ffs_t0",
                                     "t0_diab_02","t0_stro_02","t0_mi_02","cca_lmean","cca_rmean"))
 P_SHIPs2_var <- P_SHIPs2 %>% dplyr::select(c("zz_nr","SEX_SHIP2","AGE_SHIP2",
-                                      "s2_alko_02", # Alohol
+                                      "s2_alko_02", # Alkohol
                                       "s2_rau_01", # Raucher
                                       "s2_ernaehr_01",
                                       "s2_ernaehr_07",
@@ -329,6 +329,266 @@ summary(lm(age~Diet,data=df))
 ```{r}
 
 summary(lm(log(Choline)~cutc,data=df))
+
+
+```
+
+
+## Age categorisation
+
+- 18-35
+- 36-65
+- 65-80
+- >80
+
+```{r}
+library(hrbrthemes)
+
+t1_dat %>% 
+  mutate(age_cat = case_when(age >= 18 & age <= 25 ~ "18-25", # Young adult
+                             age >= 26 & age <= 35 ~ "26-35",
+                              age >= 36 & age <= 55 ~ "36-55",
+                              age >= 56 & age <= 65 ~ "56-65",
+                              age >= 66  ~ "66+")) ->t1_dat # Middle aged
+                              #age >= 80 ~ "80+"),.after="age") -> t1_dat # Aged 
+
+
+t1 <- t1_dat %>% 
+  mutate(grdH = round(grdH,2),
+         cutC = round(cutC,2),
+         cntA = round(cntA,2),
+         Diet = droplevels(Diet)) %>%
+table1::table1(~TMAO+Choline+Betaine+Carnitine+cutC+cntA+grdH+Diet+fruits+vegetables+salad|age_cat,data=.,
+                      render.missing = NULL,
+       topclass="Rtable1-zebra Rtable1-shade Rtable1-times",
+       droplevels = F,
+       overall = F)
+
+
+
+t1kable(t1,booktabs=T) %>% kable_styling("striped")
+
+p <- t1_dat %>%
+  dplyr::select(-c(fruits,salad,vegetables,age)) %>%
+  mutate("TMAO (µM)" = (TMAO),
+         "cutC (x10^5)" = (cutC),
+         "cntA (x10^5)" = (cntA),
+         "grdH (x10^5)" = (grdH),
+         "Carnitine (µM)" = Carnitine,
+         "Betaine (µM)" = Betaine,
+         "Choline (µM)" = Choline,
+         
+         .keep = "unused") %>%
+  melt() %>%
+  ggplot(aes(x=age_cat,y=value,fill=age_cat),data=.) +
+  geom_boxplot() + 
+  facet_wrap(~variable,scales="free",strip.position = "left") +
+  scale_y_log10() +
+  theme_ipsum() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle=90)) +
+  ylab(NULL) +
+  xlab(NULL)
+
+ggsave("Plots/age_cat_distributions.PDF",plot=p,device=cairo_pdf,width=210,height=297,units="mm",dpi=300)
+ggsave("Plots/age_cat_distributions.tiff",plot=p,device="tiff",width=210,height=297,units="mm",dpi=300)
+```
+
+## 10% extreme TMAO
+
+```{r}
+
+t1_dat %>%
+  dplyr::mutate(TMAO_cat = case_when(TMAO > quantile(TMAO,probs = c(.1,.9),na.rm=T)[2] ~ "10% highest TMAO",
+                                     TMAO < quantile(TMAO,probs = c(.1,.9),na.rm=T)[1] ~ "10% lowest TMAO")) %>%
+  mutate(TMAO_cat = fct_relevel(as.factor(TMAO_cat),c("10% lowest TMAO","10% highest TMAO"))) -> t1_dat
+
+
+t1_dat %>%
+  filter(!is.na(TMAO_cat)) %>%
+  table1(~TMAO+Gender+age+Betaine+Carnitine+Choline+grdH+cntA+cutC|TMAO_cat,
+       render.missing = NULL,
+       data = .,
+       topclass="Rtable1-zebra Rtable1-shade Rtable1-times",
+       droplevels = F,
+       overall = F)
+
+
+p <- t1_dat %>%
+  dplyr::select(-c(fruits,salad,vegetables,age,TMAO)) %>%
+  filter(!is.na(TMAO_cat)) %>%
+    mutate("cutC (x10^5)" = (cutC),
+         "cntA (x10^5)" = (cntA),
+         "grdH (x10^5)" = (grdH),
+         "Carnitine (µM)" = Carnitine,
+         "Betaine (µM)" = Betaine,
+         "Choline (µM)" = Choline,
+         .keep = "unused") %>%
+  melt() %>%
+  ggplot(aes(x=TMAO_cat,y=value,fill=TMAO_cat),data=.) +
+  geom_boxplot() + 
+  scale_y_log10() +
+  facet_wrap(~variable,scales="free",strip.position = "left") +
+  theme_ipsum() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle=90),
+        plot.title = element_text(size = 15, face = "bold")) +
+  ylab(NULL) +
+  xlab(NULL)
+
+ggsave("Plots/extreme_TMAO_distributions.PDF",plot=p,device=cairo_pdf,width=210,height=297,units="mm",dpi=300)
+ggsave("Plots/extreme_TMAO_distributions.tiff",plot=p,device="tiff",width=210,height=297,units="mm",dpi=300)
+```
+
+## Gender
+
+```{r}
+
+df <- t1_dat %>%
+  mutate(tmao = log(TMAO),
+         cutc = log(cutC),
+         cnta = log(cntA),
+         grdh = log(grdH),
+         choline = log(Choline),
+         betaine = log(Betaine),
+         carnitine = log(Carnitine),.keep = "unused")
+
+
+summary(lm(tmao~Gender,data=df))
+summary(lm(tmao~Diet,data=df))
+
+summary(lm(choline~Gender,data=df))
+summary(lm(carnitine~Gender,data=df))
+summary(lm(betaine~Gender,data=df))
+
+summary(lm(cutc~Gender,data=df))
+summary(lm(cnta~Gender,data=df))
+summary(lm(grdh~Gender,data=df))
+
+summary(lm(tmao~Gender*Diet,data=df))
+
+summary(lm(choline~Gender+Diet,data=df))
+summary(lm(carnitine~Gender+Diet,data=df))
+summary(lm(betaine~Gender+Diet,data=df))
+
+summary(lm(cutc~Gender+Diet+vegetables,data=df))
+summary(lm(cnta~Gender+Diet,data=df))
+summary(lm(grdh~Gender+Diet,data=df))
+
+fit <- lm(grdh~Gender+Diet,data=df)
+fit0 <- lm(grdh~1,data=df)
+anova(fit0,fit,test="F")
+summary(fit)
+```
+
+
+## Clinical parameter
+
+```{r}
+library(dagitty)
+
+IMT_dag <- dagitty("dag{
+                   age -> IMT_mean
+                   age -> TMAO -> IMT_mean}")
+  
+plot(graphLayout(IMT_dag))  
+
+adjustmentSets(IMT_dag,"age","IMT_mean",effect="direct")
+  
+```
+
+
+
+
+```{r}
+
+hist(log(data$IMT_mean),na.rm=T)
+
+summary(lm(log(IMT_mean) ~ log(tmao),data=data ))
+
+summary(lm(log(IMT_mean)~age,data=data))
+
+
+df <- data %>%
+  zap_labels() %>%
+  mutate(age_cat = case_when(age >= 18 & age <= 25 ~ "18-25", # Young adult
+                             age >= 26 & age <= 35 ~ "26-35",
+                              age >= 36 & age <= 55 ~ "36-55",
+                              age >= 56 & age <= 65 ~ "56-65",
+                              age >= 66  ~ "66+"),
+         tmao = tmao/tmao_mm)
+
+res <- df %>%
+  group_by(age_cat) %>%
+  nest() %>%
+  mutate(model= map(data, function(x) lm(log(IMT_mean) ~ log(tmao),data=x)),
+         results = map(model,tidy)) %>%
+  dplyr::select(results) %>%
+  unnest(results) %>%
+  dplyr::filter(term=="log(tmao)") %>%
+  mutate(p.value = paste0("p =", round(p.value,3)))
+
+
+#df <- df %>% left_join(res,by="age_cat") %>% mutate(p.value = paste0("p =", round(p.value,3)))
+
+
+
+p <- ggplot(aes(x=tmao,y=IMT_mean,color=age_cat),data=df) +
+  geom_jitter() +
+  facet_grid(~age_cat) +
+  geom_smooth(method="lm") +
+  geom_text(aes(x=3,y=.35,label=p.value),color="black",data=res) +
+  scale_x_log10() +
+  scale_y_log10() +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle=90),
+        axis.text = element_text(size=9),
+        axis.title = element_text(size=14),
+        strip.text.x = element_text(size=14)) +
+  xlab("TMAO (µM)") +
+  ylab("IMT (mm)")
+
+
+
+ggsave("Plots/TMAO_IMT_AGE.PDF",plot=p,device=cairo_pdf,width=200,height=100,units="mm",dpi=300)
+ggsave("Plots/TMAO_IMT_AGE.tiff",plot=p,device="tiff",width=200,height=100,units="mm",dpi=300)
+
+
+model <- df %>% 
+  filter(age_cat == "66+") %>%
+  rlm(log(IMT_mean) ~ log(tmao)+age,data=.) 
+
+
+f.robftest(model,var="log(tmao)")
+
+
+
+df %>% 
+  filter(age_cat == "18-65") %>%
+  rlm(log(IMT_mean) ~ log(tmao)+age,data=. ) %>% summary
+
+
+summary(model)
+
+library(broom)
+
+df %>%
+  group_by(age_cat) %>%
+  nest() %>%
+  mutate(model= map(data, function(x) lm(log(IMT_mean) ~ log(tmao),data=x)),
+         results = map(model,tidy)) %>%
+  dplyr::select(results) %>%
+  unnest(results) %>%
+  dplyr::filter(term=="log(tmao)")
+```
+
+
+
+
+## Gene abundances 
+```{r}
+
 
 
 ```
